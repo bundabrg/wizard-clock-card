@@ -1,5 +1,5 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.04.17";
+const VERSION = "2026.04.20";
 
 const debugLogging = false; // set to true to enable detailed logging for debugging purposes
 
@@ -55,7 +55,7 @@ class WizardClockCard extends HTMLElement {
       locationInfoEntry.keep = true;
     }
 
-    /* Add the state of each wizard, which may be a zone or something else. */
+    /* Add the state of each wizard, which may be in a zone or something else. */
     for (let num = this.wizardInfo.length - 1; num >= 0; num--) {
       var stateStr = this.getWizardState(this.wizardInfo[num].entity);
       this.wizardInfo[num].stateStr = stateStr;
@@ -68,7 +68,8 @@ class WizardClockCard extends HTMLElement {
 
       let locationInfoEntry = this.getLocationInfo(stateStr);
       locationInfoEntry.keep = true;
-      this.wizardInfo[num].offset = zigZagOffset(locationInfoEntry.wizardCount);      
+      this.wizardInfo[num].offset = zigZagOffset(locationInfoEntry.wizardCount);
+      this.wizardInfo[num].locnum = locationInfoEntry.locnum      
       locationInfoEntry.wizardCount += 1;
 
       //this.show_images = true  // testing
@@ -87,36 +88,39 @@ class WizardClockCard extends HTMLElement {
       }
     }
 
-    /* Skip the UI update if wizards have not changed */
+    // TODO: figure out how to refactor this so that it does not kill off the animation of the hands.
 
-      if (deepEqual(this.wizardInfoPrevious, this.wizardInfo)) {
-        return
-      }
-      this.wizardInfoPrevious = structuredClone(this.wizardInfo);
+    /* Skip the UI update if wizards have not changed (to save battery life) */
+
+    //  if (deepEqual(this.wizardInfoPrevious, this.wizardInfo)) {
+    //    console.log(`No change in wizardInfo.`);
+    //    return
+    //  }
+    //  this.wizardInfoPrevious = structuredClone(this.wizardInfo);
 
     /* List the wizardInfo in the console for debugging */
 
-  //  if (debugLogging) {
+    if (debugLogging) {
       console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}wizardInfo:`);
       for (let num = 0; num < this.wizardInfo.length; num++){
-          console.log(`    ${this.wizardInfo[num].name} (entity: ${this.wizardInfo[num].entity}, `);
+          console.log(`    ${this.wizardInfo[num].name} (entity: ${this.wizardInfo[num].entity}, image: ${this.wizardInfo[num].image ? this.wizardInfo[num].image.src : "none"}, `);
           console.log(`        color: ${this.wizardInfo[num].color}, textcolor: ${this.wizardInfo[num].textcolor}`);
-          console.log(`        stateStr: ${this.wizardInfo[num].stateStr}, offset: ${this.wizardInfo[num].offset}, image: ${this.wizardInfo[num].image ? this.wizardInfo[num].image.src : "none"})`);
+          console.log(`        stateStr: ${this.wizardInfo[num].stateStr}, locnum: ${this.wizardInfo[num].locnum}, offset: ${this.wizardInfo[num].offset})`);
         }
-  //  }
+    }
 
     /* List the locationInfo in the console for debugging */
 
-  //  if (debugLogging) {
+    if (debugLogging) {
       console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}locationInfo:`);
       for (let num = 0; num < this.locationInfo.length; num++){
         if (this.locationInfo[num].name === ' ') {
           console.log(`    (empty slot)`);
         } else {
-          console.log(`    ${this.locationInfo[num].name} (keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount})`);
+          console.log(`    ${this.locationInfo[num].name} (locnum: ${this.locationInfo[num].locnum}, keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount})`);
         }
       }
-  //  }
+    }
 
     /* Finally, begin drawing the clock! */
 
@@ -240,17 +244,21 @@ class WizardClockCard extends HTMLElement {
         this.colorElement.style.left = "-9999px";
         this.div.appendChild(this.colorElement);
         
-        /* icons for locations that are not zones (zone config has icons defined) */
+        /* icons for locations that are not zones */
         this.zoneInfo = [];
-        // TODO: these can come from config later
-        //this.addZoneInfo('Home', 'mdi:home');
-        this.addZoneInfo('Just Arrived', 'mdi:home-outline');
-        this.addZoneInfo('Just Left', 'mdi:arrow-left-bold-box-outline');
-        this.addZoneInfo('Away', 'mdi:help-circle-outline');
-        this.addZoneInfo('Lost', 'mdi:help');
-        // from geocode localities
-        this.addZoneInfo('Springville', 'mdi:fountain');
-        this.addZoneInfo('Provo', 'mdi:city');
+        (config.location_icons || []).forEach(li => {
+          this.addZoneInfo(li.name, li.icon);
+        });
+
+    //    // TODO: these can come from config later
+    //    //this.addZoneInfo('Home', 'mdi:home');
+    //    this.addZoneInfo('Just Arrived', 'mdi:home-outline');
+    //    this.addZoneInfo('Just Left', 'mdi:arrow-left-bold-box-outline');
+    //    this.addZoneInfo('Away', 'mdi:help-circle-outline');
+    //    this.addZoneInfo('Lost', 'mdi:help');
+    //    // from geocode localities
+    //    this.addZoneInfo('Springville', 'mdi:fountain');
+    //    this.addZoneInfo('Provo', 'mdi:city');
 
         /* watch for changes in the size of the card */
 
@@ -334,7 +342,7 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   loadWizardImage(num) {
 // ----------------------------------------------------------------------------
-    const wiz = this.wizardInfo[num];
+    const wiz = this.wizardInfo[num].name;
     // Ensure entity exists
     if (!wiz.entity) return;
 
@@ -565,8 +573,7 @@ class WizardClockCard extends HTMLElement {
 
     // Draw face border with subtle shadow
     ctx.save();
-    ctx.strokeStyle = getComputedStyle(document.documentElement)
-    .getPropertyValue('--primary-text-color');   // --divider-color or --primary-text-color
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color');   // --divider-color or --primary-text-color
     ctx.lineWidth = Math.max(2, radius * 0.025);
     ctx.shadowColor = "#0006";
     ctx.shadowBlur = 4;
@@ -607,6 +614,9 @@ class WizardClockCard extends HTMLElement {
           // rotate to center of drawing position
           ctx.rotate(ang);
 
+          // TODO: split long locations (on a space or hyphen) into two lines
+          // TODO: possibly adjust the font (like on the hands) if necessary
+
           var startAngle = 0; 
           var inwardFacing = true;
           var text = locationInfo[num].name.split("").reverse().join("");
@@ -629,11 +639,16 @@ class WizardClockCard extends HTMLElement {
           ctx.rotate(startAngle);
 
           // set up icon for this location
+          // TODO: The angle of the icon when it is drawn is not perfect because it is drawn from its top-left corner.
+          // TODO: The angle of ctx needs to be shifted to the position of the middle of the icon,
+          // TODO: and then the x where icon is drawn needs to go back to the left.
+          this.iconCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color');
           const iconExistsForLocation = (this.formatLocationIcon(locationInfo[num], true));
           const iconWidth = roundToEven(this.iconCanvas.width * this.scaleRatio);
           const iconHeight = roundToEven(this.iconCanvas.height * this.scaleRatio);
           const iconBottomPaddingEstimate = iconHeight * 0.13; // defined space under icon
           const iconWidthRadians = (iconWidth + iconTextGap) / (radius - iconHeight) * -1;
+
           const topBaseline = radius - Math.max(textHeight, iconHeight) - textPadding;
           const bottomBaseline = radius - textPadding - textDescent;
           this.centeredIconBaseline = radius - textPadding - textHeight - iconTextGap - iconHeight;
@@ -729,7 +744,7 @@ class WizardClockCard extends HTMLElement {
       for (let locnum = 0; locnum < locationInfo.length; locnum++) {
 
         if (locationInfo[locnum].name.toLowerCase() === stateStr.toLowerCase()) {
-
+          
           // Compute offset for this wizard within the group
           wizardOffset = wizards[num].offset * spreadBetweenWizards;
 
@@ -1158,12 +1173,14 @@ getLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
 addLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
+  const locnum = this.locationInfo.length
   const locationInfoEntry = {
       name: locationName,
+      locnum: locnum,   // position of this location on the clock dial
       keep: false,    // this flag is used to indicate whether this location is still relevant and should be kept in the list
       wizardCount: 0, // current number of wizards at this location
       wizardPosition: 0 // position of the next wizard to be drawn at this location
-
+      
   }
   // add to the end of the list
   this.locationInfo.push(locationInfoEntry);
