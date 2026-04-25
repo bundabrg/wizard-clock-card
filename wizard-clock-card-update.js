@@ -1,33 +1,140 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.04.20";
+const VERSION = "2026.04.24";
 
-const debugLogging = false; // set to true to enable detailed logging for debugging purposes
-
+const debugLogging = false;   // set to true to enable detailed logging for debugging purposes
+const debuggerStop = false ;  // set to true to stop at debugger statements
 class WizardClockCard extends HTMLElement {
+
+/* ============================================================================
+   WIZARD CLOCK CARD — ARCHITECTURE DIAGRAM (with setConfig)
+   ============================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ 0. Card Initialization (setConfig)                                      │
+   └─────────────────────────────────────────────────────────────────────────┘
+       - parse config
+       - create canvas + contexts
+       - inject font-face
+       - build wizardInfo[]
+       - build zone/location icon tables
+       - set up resize observer
+       - load background image (async)
+       - load spindle image (async)
+       - load wizard images (async)
+       - compute initial geometry (resizeClock)
+       - drawClock() once (optional)
+
+   ============================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ 1. Home Assistant State Update (set hass)                               │
+   └─────────────────────────────────────────────────────────────────────────┘
+                     │
+                     ▼
+        ┌──────────────────────────────┐
+        │ Read wizard entity states    │
+        │ Compute new target angles    │
+        └──────────────────────────────┘
+                     │
+                     ▼
+        ┌──────────────────────────────┐
+        │ Compare with previous state  │
+        └──────────────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+        ▼                         ▼
+   (no change)               (state changed)
+                                  │
+                                  ▼
+                            startHandAnimation()
+                           (begin animation loop)
+
+   ============================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ 2. Animation Loop (requestAnimationFrame)                               │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   startHandAnimation():
+       - capture startAngles[]
+       - capture targetAngles[]
+       - animationStartTime = performance.now()
+       - isAnimating = true
+       - animateHands()
+
+   animateHands():
+       - compute t = (now - startTime) / duration
+       - eased = easeOutCubic(t)
+       - interpolate each hand angle
+       - drawClock()
+       - if t < 1 → requestAnimationFrame(animateHands)
+       - else isAnimating = false
+
+   ============================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ 3. Visual Events (non‑state triggers)                                   │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   These events DO NOT start animation.
+   They only redraw the static clock face.
+
+   Wizard image loads:
+       img.onload → drawClock()
+
+   Background image loads:
+       bg.onload → drawClock()
+
+   Spindle image loads:
+       sp.onload → drawClock()
+
+   Resize observer:
+       resize → resizeClock() → drawClock()
+
+   Theme change:
+       CSS variables changed → drawClock()
+
+   Config editor changes:
+       new config applied → setConfig() → drawClock()
+
+   ============================================================================
+
+   ┌─────────────────────────────────────────────────────────────────────────┐
+   │ 4. Pure Rendering Layer                                                 │
+   └─────────────────────────────────────────────────────────────────────────┘
+
+   drawClock():
+       - clear canvas
+       - drawFace()
+       - drawNumbers()
+       - drawTime()   (uses currentstate[] angles)
+       - drawSpindle()
+       (NO animation logic here)
+       (NO requestAnimationFrame here)
+       (NO lastframe resets)
+
+   ============================================================================ */
+
 
 // ----------------------------------------------------------------------------
 // Whenever the state changes, a new `hass` object is set: Update the content.
 // ----------------------------------------------------------------------------
   set hass(hass) {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}set hass start`);
     this._hass = hass;
 
-    this.radius = this.configuredWidth / 2;
-    this.radius = this.radius * 0.90;
-
-  //  this.resizeClock();
+    //this.radius = this.configuredWidth / 2;
+    //this.radius = this.radius * 0.90;
+    this.resizeClock();
     
     // Get information about current locations and wizards
 
     this.locationInfo ||= []; // -------- this is where we store info about each location ("number" on the clock face)
     this.targetstate = []; // ----------- this is where we want the hand to point, based on the current state in hass
     this.wizardInfoPrevious ||= []; // -- saved to make comparison before updating the whole clock
-
-    if (this.lastframe && this.lastframe != 0){
-      cancelAnimationFrame(this.lastframe);
-      this.lastframe = 0;
-    }
 
     /* Clear the "keep" flag on all locationInfo entries, we'll set it again for any that are still in use */
     for (let num = 0; num < this.locationInfo.length; num++){
@@ -98,39 +205,42 @@ class WizardClockCard extends HTMLElement {
     //  }
     //  this.wizardInfoPrevious = structuredClone(this.wizardInfo);
 
-    /* List the wizardInfo in the console for debugging */
-
-    if (debugLogging) {
-      console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}wizardInfo:`);
-      for (let num = 0; num < this.wizardInfo.length; num++){
-          console.log(`    ${this.wizardInfo[num].name} (entity: ${this.wizardInfo[num].entity}, image: ${this.wizardInfo[num].image ? this.wizardInfo[num].image.src : "none"}, `);
-          console.log(`        color: ${this.wizardInfo[num].color}, textcolor: ${this.wizardInfo[num].textcolor}`);
-          console.log(`        stateStr: ${this.wizardInfo[num].stateStr}, locnum: ${this.wizardInfo[num].locnum}, offset: ${this.wizardInfo[num].offset})`);
-        }
-    }
-
-    /* List the locationInfo in the console for debugging */
-
-    if (debugLogging) {
-      console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}locationInfo:`);
-      for (let num = 0; num < this.locationInfo.length; num++){
-        if (this.locationInfo[num].name === ' ') {
-          console.log(`    (empty slot)`);
-        } else {
-          console.log(`    ${this.locationInfo[num].name} (locnum: ${this.locationInfo[num].locnum}, keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount})`);
-        }
-      }
-    }
-
     /* Finally, begin drawing the clock! */
 
-    var obj = this;
-    this.lastframe = requestAnimationFrame(function(){ 
-      obj.drawClock(); 
-    });
+    // Detect whether wizard positions changed
+    const changed = !deepEqual(this.wizardInfoPrevious, this.wizardInfo);
+    this.wizardInfoPrevious = structuredClone(this.wizardInfo);
 
-    if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}set hass end`);
-  }
+    if (changed) {
+
+      /* List the wizardInfo in the console for debugging */
+
+      if (debugLogging) {
+        console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}wizardInfo:`);
+        for (let num = 0; num < this.wizardInfo.length; num++){
+            console.log(`    ${this.wizardInfo[num].name} (entity: ${this.wizardInfo[num].entity}, image: ${this.wizardInfo[num].image ? this.wizardInfo[num].image.src : "none"}, `);
+            console.log(`        color: ${this.wizardInfo[num].color}, textcolor: ${this.wizardInfo[num].textcolor}`);
+            console.log(`        stateStr: ${this.wizardInfo[num].stateStr}, locnum: ${this.wizardInfo[num].locnum}, offset: ${this.wizardInfo[num].offset})`);
+          }
+      }
+
+      /* List the locationInfo in the console for debugging */
+
+      if (debugLogging) {
+        console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}locationInfo:`);
+        for (let num = 0; num < this.locationInfo.length; num++){
+          if (this.locationInfo[num].name === ' ') {
+            console.log(`    (empty slot)`);
+          } else {
+            console.log(`    ${this.locationInfo[num].name} (locnum: ${this.locationInfo[num].locnum}, keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount})`);
+          }
+        }
+      }
+
+      this.startHandAnimation();
+    }
+
+}
 
 // ----------------------------------------------------------------------------
 // setConfig - is called when the configuration changes.
@@ -138,6 +248,8 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   setConfig(config) {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
     console.info("%c %s %c %s",
       "color: white; background: forestgreen; font-weight: 700;",
       CARDNAME.toUpperCase(),
@@ -165,14 +277,21 @@ class WizardClockCard extends HTMLElement {
       this.show_images=this.config.show_images ? (this.config.show_images=="Yes" ? true : false) : false;
       this.imageAtTip = this.config.draw_image_at_hand_tip ? (this.config.draw_image_at_hand_tip=="Yes" ? true : false) : false;
 
+      this.backGroundImage = this.config.back_ground_image;
+      this.spindleImage = this.config.spindle_image;
+      this.faceUnderGlass = this.config.face_under_glass;
+
       if (this.config.shaft_colour){
-        this.shaft_color = this.config.shaft_colour;
+        this.spindleColor = this.config.shaft_colour;
       }
       else if (this.config.shaft_color){
-        this.shaft_color = this.config.shaft_color;
+        this.spindleColor = this.config.shaft_color;
+      }
+      else if (this.config.spindle_color){
+        this.spindleColor = this.config.spindle_color;
       }
       else {
-        this.shaft_color = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
+        this.spindleColor = getComputedStyle(document.documentElement).getPropertyValue('--primary-color');
       }    
 
       if (this.config.fontName) {
@@ -235,7 +354,6 @@ class WizardClockCard extends HTMLElement {
         this.iconCtx = this.iconCanvas.getContext("2d");
         this.iconCtx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color');
         this.iconCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--primary-text-color');
-        this.resizeClock();
 
         /* set up color resolution area */
         this.colorElement = document.createElement('span');
@@ -271,6 +389,8 @@ class WizardClockCard extends HTMLElement {
 
         this.resizeObserver = createResizeObserver(this);
         this.resizeObserver.observe(this.card);
+
+        this.observeThemeChanges();
       }
 
       /* Create normalized wizard configuration object. */
@@ -305,9 +425,11 @@ class WizardClockCard extends HTMLElement {
         if (this.show_images) {
           this.loadWizardImage(i);
         }
+        
       }
+      this.resizeClock();
 
-    } catch (err) {
+      } catch (err) {
       console.error(`Failed in setConfig(): `, err);
     }
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}getConfig end`);
@@ -340,6 +462,138 @@ class WizardClockCard extends HTMLElement {
   }
 
 // ----------------------------------------------------------------------------
+  observeThemeChanges() {
+// ----------------------------------------------------------------------------
+    const root = document.documentElement;
+
+    this.themeObserver = new MutationObserver(() => {
+      this.drawClock();
+    });
+
+    this.themeObserver.observe(root, {
+      attributes: true,
+      attributeFilter: ["style", "class"]
+    });
+  }
+
+// ----------------------------------------------------------------------------
+// startHandAnimation -> animateHands = animation logic
+// ----------------------------------------------------------------------------
+
+  // --- Starting animation state ---
+  animationStartTime = 0;
+  animationDuration = 600; // ms
+  isAnimating = false;
+  startAngles = [];
+  targetAngles = [];
+
+  // --- Easing functions ---
+  easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+
+  easeOutBounce(t) {
+    const n1 = 7.5625;
+    const d1 = 2.75;
+
+    if (t < 1 / d1) {
+      return n1 * t * t;
+    } else if (t < 2 / d1) {
+      t -= 1.5 / d1;
+      return n1 * t * t + 0.75;
+    } else if (t < 2.5 / d1) {
+      t -= 2.25 / d1;
+      return n1 * t * t + 0.9375;
+    } else {
+      t -= 2.625 / d1;
+      return n1 * t * t + 0.984375;
+    }
+  }
+
+// ----------------------------------------------------------------------------
+  startHandAnimation() {
+// ----------------------------------------------------------------------------
+
+    // =====================================================
+    // 1. Force a fresh drawClock() to build target/current state
+    // =====================================================
+    this.drawClock();   // <-- THIS is the missing piece
+
+    // =====================================================
+    // 2. Capture starting angles
+    // =====================================================
+    this.startAngles = this.currentstate.map(s => s.pos);
+
+    // =====================================================
+    // 3. Capture target angles
+    // =====================================================
+    this.targetAngles = this.targetstate.map(s => s.pos);
+
+    // =====================================================
+    // 4. Validate geometry before starting animation
+    // =====================================================
+    for (let i = 0; i < this.startAngles.length; i++) {
+      if (!isFinite(this.startAngles[i]) || !isFinite(this.targetAngles[i])) {
+        console.warn("startHandAnimation: invalid angle, skipping animation", {
+          start: this.startAngles[i],
+          target: this.targetAngles[i]
+        });
+        return;
+      }
+    }
+
+  // =====================================================
+  // 5. Start animation
+  // =====================================================
+  this.animationStartTime = performance.now();
+  this.isAnimating = true;
+  this.animateHands();
+}
+
+// ----------------------------------------------------------------------------
+  animateHands() {
+// ----------------------------------------------------------------------------
+
+    // Abort animation if geometry becomes invalid mid-animation
+    for (let i = 0; i < this.currentstate.length; i++) {
+      if (!isFinite(this.startAngles[i]) ||
+          !isFinite(this.targetAngles[i]) ||
+          !isFinite(this.currentstate[i].pos)) {
+        console.warn("Aborting animation due to invalid state:", {
+          start: this.startAngles[i],
+          target: this.targetAngles[i],
+          current: this.currentstate[i].pos
+        });
+        this.isAnimating = false;
+        this.drawClock();
+        return;
+      }
+    }
+
+    const now = performance.now();
+    const t = Math.min((now - this.animationStartTime) / this.animationDuration, 1);
+  //  const eased = this.easeOutCubic(t);
+    const eased = this.easeOutBounce(t);
+
+    // Interpolate each hand
+    for (let i = 0; i < this.currentstate.length; i++) {
+      const start = this.startAngles[i];
+      const end = this.targetAngles[i];
+      this.currentstate[i].pos = start + (end - start) * eased;
+    }
+
+    // Draw one frame
+    this.drawClock();
+
+    if (t < 1) {
+      requestAnimationFrame(() => this.animateHands());
+    } else {
+      this.isAnimating = false;
+    }
+  }
+
+
+// ----------------------------------------------------------------------------
   loadWizardImage(num) {
 // ----------------------------------------------------------------------------
     const wiz = this.wizardInfo[num].name;
@@ -359,13 +613,16 @@ class WizardClockCard extends HTMLElement {
       /* Images will only be displayed once they have completed loading. */
 
       img.onload = () => {
+        if (debuggerStop) debugger;
         wiz.image = img;
         if (debugLogging) {
           console.log(`wizardInfo[${num}].image loaded: ${wiz.image.src}`);
         }
+        this.drawClock();
       };
 
       img.onerror = () => {
+      if (debuggerStop) debugger;
         console.log(`wizardInfo[${num}].image failed to load: ${url}`);
       };
 
@@ -376,6 +633,11 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   resizeClock() {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
+    if (!this.configuredWidth || !this.canvas || !this.iconCanvas) {
+      return
+    }
     // Calculate available width
     this.availableWidth = Math.round(Math.min(this.card.offsetWidth, window.innerWidth, window.innerHeight)) - 16;
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}availableWidth: ${this.availableWidth}px`);
@@ -414,6 +676,8 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   getCardSize() {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
     var cardSize = (this.configuredWidth / 50).toFixed(1);
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}getCardSize = ${cardSize}`);
     return cardSize;
@@ -424,6 +688,8 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   getWizardState(entity) {
 // ----------------------------------------------------------------------------
+    // if (debuggerStop) debugger;
+
     const state = this._hass.states[entity];
     if (!state) {
       /* If the entity doesn't exist, log a warning and return the lost state (if configured) or Away. */
@@ -515,19 +781,34 @@ class WizardClockCard extends HTMLElement {
   }
 
 // ----------------------------------------------------------------------------
-// drawClock - starts drawing the clock face and hands.
+// drawClock - render the clock face and hands.
 // ----------------------------------------------------------------------------
   drawClock() {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
+    // =====================================================
+    // SAFETY GUARD: Ensure geometry is valid before drawing
+    // =====================================================
+    if (!isFinite(this.radius) || this.radius <= 0 ) {
+        console.warn("drawClock skipped:  invalid geometry:", {
+        radius: this.radius,
+      });
+      return;
+    }
+
     if (!Array.isArray(this.locationInfo) || this.locationInfo.length === 0) {
-        if (debugLogging) {
-            console.log("drawClock skipped: locationInfo not ready");
-        }
+        console.log("drawClock skipped: locationInfo not ready");
+        return;
+    }
+
+    if (!Array.isArray(this.wizardInfo) || this.wizardInfo.length === 0) {
+        console.log("drawClock skipped: wizardInfo not ready");
         return;
     }
 
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}drawClock start`);
-      this.lastframe = 0;
+
     // Clear full canvas extents
     this.ctx.clearRect(
       -this.canvas.width,
@@ -535,41 +816,110 @@ class WizardClockCard extends HTMLElement {
       this.canvas.width * 2,
       this.canvas.height * 2
     );
-      this.drawFace(this.ctx, this.radius);
-      this.drawNumbers(this.ctx, this.radius, this.locationInfo);
-      this.drawTime(this.ctx, this.radius, this.locationInfo, this.wizardInfo);
-      this.drawHinge(this.ctx, this.radius, this.shaft_color);
-      // request next frame if required
-      var redraw = false;
-      var num;
-      for (let num = 0; num < this.currentstate.length; num++){
-        if (Math.round(this.currentstate[num].pos*100) != Math.round(this.targetstate[num].pos*100))
-        {
-          redraw = true;
-        }
-      }
 
-      if (redraw){
-        var obj = this;
-        this.lastframe = requestAnimationFrame(function(){ 
-          obj.drawClock(); 
-        });
-      }
+    // Draw the clock
+    this.drawFace(this.ctx, this.radius);
+    this.drawNumbers(this.ctx, this.radius, this.locationInfo);
+    this.drawTime(this.ctx, this.radius, this.locationInfo, this.wizardInfo);
+    this.drawSpindle(this.ctx, this.radius, this.spindleColor);
   }
 
 // ----------------------------------------------------------------------------
   drawFace(ctx, radius) {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}drawFace start`);
+    let backgroundScaledRadius;
+    if (this.locationIcon == "center") {
+      backgroundScaledRadius = radius * 0.7;
+    } else {
+      backgroundScaledRadius = radius * 0.85;
+    }
+    //const backgroundGlobalAlpha = 0.50;   // 50% opacity
+    const backgroundGlobalAlpha = 0.95;     // 95% opacity
+
     ctx.shadowColor = null;
     ctx.shadowBlur = 0;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
 
+    // Color the face
     ctx.beginPath();
     ctx.arc(0, 0, radius, 0, 2*Math.PI);
     ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--secondary-background-color');
     ctx.fill();
+
+    // TODO: animate the face by rotating through a series of background images?
+
+    // Get the background image if configured
+    if (this.backGroundImage) {
+
+        // Start loading only once
+        if (!this.bgCircular && !this.bgImage) {
+
+            const img = new Image();
+            this.bgImage = img;   // mark load in progress
+
+            img.onload = () => {
+                if (debuggerStop) debugger;
+                console.log("Background image loaded:", this.backGroundImage);
+
+                const imgW = img.width;
+                const imgH = img.height;
+                const r = Math.min(imgW, imgH) / 2;
+
+                const offCanvas = document.createElement('canvas');
+                offCanvas.width = imgW;
+                offCanvas.height = imgH;
+
+                const offCtx = offCanvas.getContext('2d');
+
+                // Clip to centered circle
+                offCtx.beginPath();
+                offCtx.arc(imgW / 2, imgH / 2, r, 0, 2 * Math.PI);
+                offCtx.clip();
+
+                offCtx.drawImage(img, 0, 0, imgW, imgH);
+
+                this.bgCircular = offCanvas;
+
+                // free memory — safe because we never need the raw image again
+                this.bgImage = null;
+
+                this.lastframe = requestAnimationFrame(() => this.drawClock());
+
+                this.drawClock();
+            };
+
+            img.onerror = () => {
+                  if (debuggerStop) debugger;
+                console.warn("Background image failed to load:", this.backGroundImage);
+
+                // mark failure so we don't retry endlessly
+                this.bgImage = "Failed";
+
+                // redraw WITHOUT background
+                //this.lastframe = requestAnimationFrame(() => this.drawClock());
+            };
+            console.log("Loading background image: ", this.backGroundImage)
+            img.src = this.backGroundImage;
+        }
+
+        // Draw the background image if loaded
+        if (this.bgCircular) {
+            ctx.save();
+            ctx.globalAlpha = backgroundGlobalAlpha;
+            ctx.drawImage(
+                this.bgCircular,
+                -backgroundScaledRadius,
+                -backgroundScaledRadius,
+                backgroundScaledRadius * 2,
+                backgroundScaledRadius * 2
+            );
+            ctx.restore();
+        }
+    }
 
     // Draw face border with subtle shadow
     ctx.save();
@@ -584,7 +934,7 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   drawNumbers(ctx, radius, locationInfo) {
 // ----------------------------------------------------------------------------
-
+    if (debuggerStop) debugger;
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}drawNumbers start`);
     /* 
         Text on a curve code modified from function written by James Alford here: http://blog.graphicsgen.com/2015/03/html5-canvas-rounded-text.html
@@ -728,6 +1078,8 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
   drawTime(ctx, radius, locationInfo, wizards) {
 // ----------------------------------------------------------------------------
+    if (debuggerStop) debugger;
+
     this.targetstate = [];
     const spreadBetweenWizards = 0.28;   // how much of the clock face to spread wizards out
 
@@ -783,26 +1135,34 @@ class WizardClockCard extends HTMLElement {
       });
     }
 
-    // Initialize currentstate if needed
+    // Ensure currentstate exists
     if (!this.currentstate) {
       this.currentstate = [];
     }
 
     // Smooth movement toward targetstate
     for (let num = 0; num < wizards.length; num++) {
-      if (this.currentstate[num]) {
-        this.currentstate[num].pos +=
-          (this.targetstate[num].pos - this.currentstate[num].pos) / 60;
-      } else {
-        this.currentstate.push({
+
+      // Ensure currentstate has the same length as targetstate
+      if (!this.currentstate[num]) {
+        this.currentstate[num] = {
           pos: 0,
           length: this.targetstate[num].length,
           width: this.targetstate[num].width,
           wizard: this.targetstate[num].wizard,
           color: this.targetstate[num].color,
           textcolor: this.targetstate[num].textcolor
-        });
+        };
       }
+
+      // Always update length/width in case config changed
+      this.currentstate[num].length = this.targetstate[num].length;
+      this.currentstate[num].width  = this.targetstate[num].width;
+
+      // Smooth movement
+      this.currentstate[num].pos +=
+        (this.targetstate[num].pos - this.currentstate[num].pos) / 60;
+      
     }
 
     // Draw hands
@@ -822,15 +1182,28 @@ class WizardClockCard extends HTMLElement {
 // ----------------------------------------------------------------------------
 drawHand(ctx, pos, length, width, wizard, color, textcolor) {
 // ----------------------------------------------------------------------------
+  if (debuggerStop) debugger;
   if (debugLogging) {
     console.log(`drawHand → length=${length}, width=${width}, pos=${pos}`);
+  }
+
+  ctx.save();     // save A
+
+  // =====================================================
+  // SAFETY GUARD: Validate geometry before drawing
+  // =====================================================
+  if (!isFinite(pos) || !isFinite(length) || !isFinite(width) || width <= 0) {
+    console.warn("Skipping hand due to invalid geometry:", {
+      pos, length, width, wizard
+    });
+    ctx.restore();   // restore A
+    return;
   }
 
   // =====================================================
   // A. ENTER HAND SPACE
   // Everything that should rotate with the hand goes after this
   // =====================================================
-  ctx.save();
   ctx.rotate(pos);
 
   // =====================================================
@@ -914,7 +1287,7 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
   // =====================================================
   // E. DRAW WIZARD NAME (STILL IN HAND SPACE)
   // =====================================================
-  ctx.save();
+  ctx.save();     // save B
 
   // -----------------------------------------------------
   // E1. POSITION TEXT ALONG THE BLADE (ANCHOR POINT)
@@ -981,37 +1354,138 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
     ctx.fillStyle = nameTextGradient;
     ctx.fillText(wizard, 0, 0);
 
-    ctx.restore(); // end text
-    ctx.restore(); // end hand
+    ctx.restore(); // restore B - end text
+    ctx.restore(); // restore A - end hand
   }
 
 // ----------------------------------------------------------------------------
-  drawHinge(ctx, radius, color) {
+  drawSpindle(ctx, radius, color) {
 // ----------------------------------------------------------------------------
-    if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}drawHinge start`);
-    const hingeRadius = radius*0.05;
-    const x = 0;
-    const y = 0;
-    ctx.beginPath();
-    ctx.arc(0, 0, hingeRadius, 0, 2*Math.PI);
+    if (debuggerStop) debugger;
+    if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}drawSpindle start`);
 
-    const highlightColor =  lightenColor(getHexColor(color, this.colorElement), 25);
+    // =====================================================
+    // SAFETY GUARD: Ensure geometry is valid before drawing
+    // =====================================================
+    if (!isFinite(radius) || radius <= 0 ) {
+        console.warn("Skipping drawSpindle due to invalid geometry:", {
+        radius: radius,
+      });
+      return;
+    }
 
-    //ctx.fillStyle = color;
-    // -or-
-    // Create a radial gradient
-    const radialGradient = ctx.createRadialGradient(x, y, hingeRadius * 0.05, x, y, hingeRadius * 2);
-    // Add color stops
-    radialGradient.addColorStop(0, highlightColor); // Inner color
-    radialGradient.addColorStop(1, color); // Outer colorgradient.addColorStop(1, 'darkblue'); // Shadow color at the bottom
-    // Apply the gradient to the shape
-    ctx.fillStyle = radialGradient;
+    const spindleRadius = radius*0.05;
+    //const spindleGlobalAlpha = 0.55;   // 55% opacity
+    const spindleGlobalAlpha = 0.95;     // 95% opacity
 
-    ctx.shadowColor = "#0008";
-    ctx.shadowBlur = 10;
-    ctx.shadowOffsetX = 5;
-    ctx.shadowOffsetY = 5;
-    ctx.fill();
+    // Get the spindle image if configured
+    if (this.spindleImage) {
+
+        // Start loading only once
+        if (!this.spCircular && !this.spImage) {
+
+            const img = new Image();
+            this.spImage = img;   // mark load in progress
+
+            img.onload = () => {
+                if (debuggerStop) debugger;
+                console.log("Spindle image loaded: ", this.spindleImage);
+
+                const imgW = img.width;
+                const imgH = img.height;
+                const r = Math.min(imgW, imgH) / 2;
+
+                const offCanvas = document.createElement('canvas');
+                offCanvas.width = imgW;
+                offCanvas.height = imgH;
+
+                const offCtx = offCanvas.getContext('2d');
+
+                // Clip to centered circle
+                offCtx.beginPath();
+                offCtx.arc(imgW / 2, imgH / 2, r, 0, 2 * Math.PI);
+                offCtx.clip();
+
+                offCtx.drawImage(img, 0, 0, imgW, imgH);
+
+                this.spCircular = offCanvas;
+
+                // free memory — safe because we never need the raw image again
+                this.spImage = null;
+
+                this.lastframe = requestAnimationFrame(() => this.drawClock());
+
+                this.drawClock();
+            };
+
+            img.onerror = () => {
+                  if (debuggerStop) debugger;
+                console.warn("Spindle image failed to load: ", this.spindleImage);
+
+                // mark failure so we don't retry endlessly
+                this.spImage = "Failed";
+
+                // redraw WITHOUT spindle
+                //this.lastframe = requestAnimationFrame(() => this.drawClock());
+            };
+
+            console.log("Loading spindle image: ", this.spindleImage)
+            img.src = this.spindleImage;
+        }
+
+    }
+
+    // Draw the spindle image if loaded
+    if (this.spCircular) {
+        ctx.save();
+        // Apply the face color because the hands would otherwise show through
+        ctx.beginPath();
+        ctx.arc(0, 0, spindleRadius, 0, 2*Math.PI);
+        ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--secondary-background-color');
+        ctx.shadowColor = "#0008";
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetX = 4;
+        ctx.shadowOffsetY = 4;
+        ctx.fill();
+
+        // Now the image on top layer
+        ctx.globalAlpha = spindleGlobalAlpha;
+        ctx.drawImage(
+            this.spCircular,
+            -spindleRadius,
+            -spindleRadius,
+            spindleRadius * 2,
+            spindleRadius * 2
+        );
+        ctx.restore();
+    } else {
+
+      // Without an image, just color the spindle
+      const x = 0;
+      const y = 0;
+      ctx.beginPath();
+      ctx.arc(0, 0, spindleRadius, 0, 2*Math.PI);
+
+      const highlightColor =  lightenColor(getHexColor(color, this.colorElement), 25);
+
+      // Create a radial gradient
+      const radialGradient = ctx.createRadialGradient(x, y, spindleRadius * 0.05, x, y, spindleRadius * 2);
+      // Add color stops
+      radialGradient.addColorStop(0, highlightColor); // Inner color
+      radialGradient.addColorStop(1, color); // Outer colorgradient.addColorStop(1, 'darkblue'); // Shadow color at the bottom
+      // Apply the gradient to the shape
+      ctx.fillStyle = radialGradient;
+
+      ctx.shadowColor = "#0008";
+      ctx.shadowBlur = 10;
+      ctx.shadowOffsetX = 5;
+      ctx.shadowOffsetY = 5;
+      ctx.fill();
+    }
+
+    if (this.faceUnderGlass) {
+      drawGlassOverlay(ctx, radius);
+    }
   }
 
 // ----------------------------------------------------------------------------
@@ -1019,6 +1493,8 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
 // ----------------------------------------------------------------------------
   formatLocationIcon(locationInfo, inwardFacing) {  
 // ----------------------------------------------------------------------------
+    // if (debuggerStop) debugger;
+
     const currentText = locationInfo.name;
     if (currentText != ' ') {             
       var iconSpecification = '';
@@ -1079,6 +1555,7 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
 // ----------------------------------------------------------------------------
 getIconPath(iconSpecification) {  /* (like mdi:home) */
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
   if (debugLogging) {
     console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}getIconPath ${iconSpecification}`);
   }
@@ -1107,6 +1584,8 @@ getIconPath(iconSpecification) {  /* (like mdi:home) */
 // ----------------------------------------------------------------------------
 async fetchAndCacheIconPath(iconSpecification) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const iconName = iconSpecification.replace(/^mdi:/, ''); // strip prefix
 
   const iconEntry = this.iconPaths.find(
@@ -1153,6 +1632,8 @@ async fetchAndCacheIconPath(iconSpecification) {
 // ----------------------------------------------------------------------------
 getLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}getLocationInfo ${locationName}`);
 
   var locationInfoEntry = this.locationInfo.find(location => location.name === locationName);
@@ -1173,6 +1654,8 @@ getLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
 addLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const locnum = this.locationInfo.length
   const locationInfoEntry = {
       name: locationName,
@@ -1192,6 +1675,7 @@ addLocationInfo(locationName) {
 // ----------------------------------------------------------------------------
 getZoneInfo(zoneName) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
   if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}getZoneInfo ${zoneName}`);
 
   var zoneTableEntry = this.zoneInfo.find(zone => zone.name === zoneName);
@@ -1224,6 +1708,8 @@ getZoneInfo(zoneName) {
 // ----------------------------------------------------------------------------
 addZoneInfo(zoneName, iconSpecification) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const zoneTableEntry = { 
     name: zoneName, 
     icon: iconSpecification,
@@ -1242,8 +1728,60 @@ WizardClockCard.fontInjected = false;
 
 
 // ----------------------------------------------------------------------------
+function drawGlassOverlay(ctx, radius) {
+// ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
+  // --- 1. Glass reflection sheen ---
+  ctx.save();
+  const grad = ctx.createLinearGradient(-radius, -radius, radius, radius);
+  grad.addColorStop(0.0, "rgba(255,255,255,0.15)");
+  grad.addColorStop(0.3, "rgba(255,255,255,0.05)");
+  grad.addColorStop(0.7, "rgba(255,255,255,0.00)");
+  grad.addColorStop(1.0, "rgba(255,255,255,0.10)");
+
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // --- 2. Curved‑glass edge vignette ---
+  ctx.save();
+  const edge = ctx.createRadialGradient(
+    0, 0,
+    radius * 0.6,
+    0, 0,
+    radius
+  );
+  edge.addColorStop(0.0, "rgba(0,0,0,0.00)");
+  edge.addColorStop(1.0, "rgba(0,0,0,0.20)");
+
+  ctx.globalCompositeOperation = "multiply";
+  ctx.fillStyle = edge;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // --- 3. Specular highlight (the glint) ---
+  ctx.save();
+  ctx.globalAlpha = 0.25;
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = radius * 0.03;
+
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * 0.92, -0.6, -0.2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ----------------------------------------------------------------------------
 function  isRtlLanguage(text) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const rtlChar = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
   return rtlChar.test(text);
 }
@@ -1251,6 +1789,8 @@ function  isRtlLanguage(text) {
 // ----------------------------------------------------------------------------
 function lightenColor(color, percent) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const num = parseInt(color.slice(1), 16);
   const amt = Math.round(2.55 * percent);
 
@@ -1274,12 +1814,16 @@ function lightenColor(color, percent) {
 // ----------------------------------------------------------------------------
 function darkenColor(color, percent) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   return lightenColor(color, -percent);
 }
 
 // ----------------------------------------------------------------------------
 function rgbToHex(rgb) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   const rgbValues = rgb.match(/\d+/g); // Extract RGB values
   const hex = rgbValues.map((value) => {
       const hexValue = parseInt(value).toString(16); // Convert to hex
@@ -1291,6 +1835,8 @@ function rgbToHex(rgb) {
 // ----------------------------------------------------------------------------
 function resolveHexColor(explicitColor, cssVarName, element) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   // 1. Explicit color wins
   if (explicitColor && explicitColor.trim() !== "") {
     return getHexColor(explicitColor, element);
@@ -1316,6 +1862,8 @@ function resolveHexColor(explicitColor, cssVarName, element) {
 // ----------------------------------------------------------------------------
 function getHexColor(colorName, element) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   // Ensure element is in DOM
   if (!element.isConnected) {
     document.body.appendChild(element);
@@ -1337,6 +1885,8 @@ function getHexColor(colorName, element) {
 // ----------------------------------------------------------------------------
 function roundToEven(num) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   let rounded = Math.round(num);
   return (rounded % 2 === 0) ? rounded : rounded + 1;
 }
@@ -1346,16 +1896,20 @@ function roundToEven(num) {
 // ----------------------------------------------------------------------------
 function debouncedOnResize(thisObject) {
 // ----------------------------------------------------------------------------
+  if (debuggerStop) debugger;
+
   if (!Array.isArray(thisObject.locationInfo)) return;
   if (debugLogging) console.log(`${thisObject.config && thisObject.config.header ? "(" + thisObject.config.header + ") " : ""}debouncedOnResize triggering set hass`);
   /* trigger an update */
   thisObject.resizeClock();
-  requestAnimationFrame(() => thisObject.drawClock());
+  thisObject.drawClock();
 }
 
 // ----------------------------------------------------------------------------
 function createResizeObserver(thisObject) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   return new ResizeObserver(() => {
     clearTimeout(thisObject.resizeTimeout);
 
@@ -1371,6 +1925,8 @@ function createResizeObserver(thisObject) {
 // ----------------------------------------------------------------------------
 function slugifyHA(name) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   return name
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -1384,6 +1940,8 @@ function slugifyHA(name) {
 // ----------------------------------------------------------------------------
 function resolveZoneEntityId(hass, friendlyName) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   if (!hass || !hass.states) return null;
 
   // Normalize comparison
@@ -1414,6 +1972,8 @@ function resolveZoneEntityId(hass, friendlyName) {
 // ----------------------------------------------------------------------------
 function zigZagOffset(n) {
 // ----------------------------------------------------------------------------
+  //if (debuggerStop) debugger;
+
   const k = Math.floor((n + 1) / 2);   // magnitude
   return (n % 2 === 0) ? k : -k;        // even index → +k, odd index → -k
 }
@@ -1428,6 +1988,8 @@ function zigZagOffset(n) {
 // ----------------------------------------------------------------------------
 function deepEqual(a, b) {
 // ----------------------------------------------------------------------------
+  // if (debuggerStop) debugger;
+
   if (a === b) return true;
 
   if (typeof a !== 'object' || typeof b !== 'object' || !a || !b)

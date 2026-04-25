@@ -19,7 +19,7 @@
  * -------------------------------------------------- */
 
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "1.2.0";
+const VERSION = "1.2.1";
 
 console.info(
   "%c %s %c %s",
