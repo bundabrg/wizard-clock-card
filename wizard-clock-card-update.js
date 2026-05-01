@@ -1,5 +1,5 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.04.24";
+const VERSION = "2026.04.30";
 
 const debugLogging = false;   // set to true to enable detailed logging for debugging purposes
 const debuggerStop = false ;  // set to true to stop at debugger statements
@@ -175,11 +175,10 @@ class WizardClockCard extends HTMLElement {
 
       let locationInfoEntry = this.getLocationInfo(stateStr);
       locationInfoEntry.keep = true;
+      locationInfoEntry.lastUsed = performance.now();  // Update the last used timestamp
       this.wizardInfo[num].offset = zigZagOffset(locationInfoEntry.wizardCount);
       this.wizardInfo[num].locnum = locationInfoEntry.locnum      
       locationInfoEntry.wizardCount += 1;
-
-      //this.show_images = true  // testing
 
       /* Create an image object and assign the URL if we can find one. */
       if (this.show_images) {
@@ -187,23 +186,24 @@ class WizardClockCard extends HTMLElement {
       }
     }
 
-    /* Add some empty location slots if min_location_slots is set and we don't have that many yet, this helps to stop the clock jumping around when new locations are added */
-    if (this.locationInfo.length < this.min_location_slots) {
-      for (let num = this.locationInfo.length; num < this.min_location_slots; num++){
-        let locationInfoEntry = this.addLocationInfo(' ');
-        locationInfoEntry.keep = false;
-      }
+    /* Add some "empty" location slots if we don't have min_location_slots yet; 
+        this helps to stop the clock from jumping around when new locations are added later */
+    var location_icon_num = 0;   /* start with the first location that we listed icons for in the config */ 
+    while (this.locationInfo.length < this.min_location_slots) {   /* continue until we have enough */
+        if (location_icon_num < this.config.location_icons.length) {  /* any locations left available? */
+          let li = this.config.location_icons[location_icon_num];
+          location_icon_num++;
+          let locationInfoEntry = this.getLocationInfo(li.name);  /* try this one */
+          if (locationInfoEntry.keep == false) {
+              locationInfoEntry.keep = true;            /* keep it for this cycle */
+              continue;                                       /* we just added it */
+          }
+        } else {
+          let locationInfoEntry = this.addLocationInfo(' ');
+          locationInfoEntry.keep = false;
+          console.log(`Added empty location slot`);
+        }
     }
-
-    // TODO: figure out how to refactor this so that it does not kill off the animation of the hands.
-
-    /* Skip the UI update if wizards have not changed (to save battery life) */
-
-    //  if (deepEqual(this.wizardInfoPrevious, this.wizardInfo)) {
-    //    console.log(`No change in wizardInfo.`);
-    //    return
-    //  }
-    //  this.wizardInfoPrevious = structuredClone(this.wizardInfo);
 
     /* Finally, begin drawing the clock! */
 
@@ -232,7 +232,7 @@ class WizardClockCard extends HTMLElement {
           if (this.locationInfo[num].name === ' ') {
             console.log(`    (empty slot)`);
           } else {
-            console.log(`    ${this.locationInfo[num].name} (locnum: ${this.locationInfo[num].locnum}, keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount})`);
+            console.log(`    ${this.locationInfo[num].name} (locnum: ${this.locationInfo[num].locnum}, keep: ${this.locationInfo[num].keep}, wizardCount: ${this.locationInfo[num].wizardCount}, lastUsed: ${this.locationInfo[num].lastUsed})`);
           }
         }
       }
@@ -1641,13 +1641,25 @@ getLocationInfo(locationName) {
     // try for the first empty slot
     locationInfoEntry = this.locationInfo.find(location => location.name === " ");  }
   if (!locationInfoEntry) {
-    // try for the last unused slot
-    locationInfoEntry = this.locationInfo.findLast(location => location.keep === false);  }
+    // try for the oldest unused slot
+    var oldestTimestamp = Infinity;
+    var oldestIndex = -1;
+    for (let i = this.locationInfo.length - 1; i >= 0; i--) {
+      if (this.locationInfo[i].keep === false) {
+        if (this.locationInfo[i].lastUsed < oldestTimestamp) {
+          oldestTimestamp = this.locationInfo[i].lastUsed;
+          oldestIndex = i;
+        }
+      }
+    }
+    if (oldestIndex !== -1) {
+      locationInfoEntry = this.locationInfo[oldestIndex];  }
+  }
   if (!locationInfoEntry) {
     // if we still don't have an entry, add a new one
     locationInfoEntry = this.addLocationInfo(locationName);
   }
-  locationInfoEntry.name = locationName; // update name in case it was an empty slot
+  locationInfoEntry.name = locationName; // update name in case it was an empty slot or previously used for a different location
   return locationInfoEntry;
 }
 
@@ -1661,9 +1673,9 @@ addLocationInfo(locationName) {
       name: locationName,
       locnum: locnum,   // position of this location on the clock dial
       keep: false,    // this flag is used to indicate whether this location is still relevant and should be kept in the list
+      lastUsed: 0,    // timestamp of the last time this location was used by a wizard (for reusing old locations)
       wizardCount: 0, // current number of wizards at this location
       wizardPosition: 0 // position of the next wizard to be drawn at this location
-      
   }
   // add to the end of the list
   this.locationInfo.push(locationInfoEntry);
