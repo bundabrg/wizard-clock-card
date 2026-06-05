@@ -1,5 +1,5 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.04.30";
+const VERSION = "2026.06.04";
 
 const debugLogging = false;   // set to true to enable detailed logging for debugging purposes
 const debuggerStop = false ;  // set to true to stop at debugger statements
@@ -126,10 +126,6 @@ class WizardClockCard extends HTMLElement {
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}set hass start`);
     this._hass = hass;
 
-    //this.radius = this.configuredWidth / 2;
-    //this.radius = this.radius * 0.90;
-    this.resizeClock();
-    
     // Get information about current locations and wizards
 
     this.locationInfo ||= []; // -------- this is where we store info about each location ("number" on the clock face)
@@ -237,6 +233,7 @@ class WizardClockCard extends HTMLElement {
         }
       }
 
+      this.resizeClock();
       this.startHandAnimation();
     }
 
@@ -368,16 +365,6 @@ class WizardClockCard extends HTMLElement {
           this.addZoneInfo(li.name, li.icon);
         });
 
-    //    // TODO: these can come from config later
-    //    //this.addZoneInfo('Home', 'mdi:home');
-    //    this.addZoneInfo('Just Arrived', 'mdi:home-outline');
-    //    this.addZoneInfo('Just Left', 'mdi:arrow-left-bold-box-outline');
-    //    this.addZoneInfo('Away', 'mdi:help-circle-outline');
-    //    this.addZoneInfo('Lost', 'mdi:help');
-    //    // from geocode localities
-    //    this.addZoneInfo('Springville', 'mdi:fountain');
-    //    this.addZoneInfo('Provo', 'mdi:city');
-
         /* watch for changes in the size of the card */
 
         if (this.resizeObserver) {
@@ -428,6 +415,9 @@ class WizardClockCard extends HTMLElement {
         
       }
       this.resizeClock();
+      if (this._hass) {
+        this.drawClock();
+      }
 
       } catch (err) {
       console.error(`Failed in setConfig(): `, err);
@@ -634,6 +624,7 @@ class WizardClockCard extends HTMLElement {
   resizeClock() {
 // ----------------------------------------------------------------------------
     if (debuggerStop) debugger;
+    if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}resizeClock: start`);
 
     if (!this.configuredWidth || !this.canvas || !this.iconCanvas) {
       return
@@ -642,11 +633,13 @@ class WizardClockCard extends HTMLElement {
     this.availableWidth = Math.round(Math.min(this.card.offsetWidth, window.innerWidth, window.innerHeight)) - 16;
     if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}availableWidth: ${this.availableWidth}px`);
     if (this.availableWidth <= 0) {
-      if (debugLogging) console.log(`${this.config.header ? "(" + this.config.header + ") " : ""}skipping update`);
-      return;
+      this.availableWidth = Math.round(Math.min(window.innerWidth, window.innerHeight)) - 16;
+      if (this.availableWidth <= 0) {
+        this.availableWidth = this.configuredWidth;  // fallback to configured width if nothing drawn yet
+      }
+    } else {
+      this.availableWidth = Math.round(Math.min(this.availableWidth, this.configuredWidth));
     }
-    this.availableWidth = Math.round(Math.min(this.availableWidth, this.configuredWidth));
-
     // Adjust the clock dimensions
     this.canvas.width = this.configuredWidth;
     this.canvas.height = this.configuredWidth;
