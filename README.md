@@ -3,6 +3,8 @@ A wizarding/location "clock" Lovelace component for Home Assistant
 
 <img src="example.png" alt="Example wizarding clock" width="400">
 
+<img src="updated_example.png" alt="Updated example" width="400">
+
 ## About
 
 I was suprised when I couldn't find something like this that somebody else had already made, so decided to give it a go myself! It took a few months due to not having much spare time, and javascript not being my first language, but I eventually got it working quite nicely for my purposes. It looks (and is) pretty basic so far.
