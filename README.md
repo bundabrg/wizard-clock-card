@@ -93,6 +93,53 @@ lost: 'In mortal peril'
 travelling: 'Between here and there'
 ```
 
+## Config for updated version
+
+There is a configuration editor that also accepts YAML for configuration. This is the configuration for the example that was shown above.
+```
+type: custom:wizard-clock-card-update
+locations:
+  - Just Arrived
+  - Home
+  - Just Left
+location_icons:
+  - name: Just Arrived
+    icon: mdi:home-outline
+  - name: Just Left
+    icon: mdi:arrow-left-bold-box-outline
+  - name: Springville
+    icon: mdi:fountain
+  - name: Provo
+    icon: mdi:city
+  - name: Lost
+    icon: mdi:help
+  - name: Away
+    icon: mdi:help-circle-outline
+min_location_slots: 6
+back_ground_image: /local/custom_cards/wizard-clock-card-update/ClockGears-1.png
+spindle_image: /local/custom_cards/wizard-clock-card-update/Spindle.png
+fontName: Madina_font
+fontface: >-
+  font-family: Madina_font;    src: local(Madina_font),
+  url('/local/custom_cards/wizard-clock-card-update/MADINA.TTF')
+  format('truetype');
+show_images: "No"
+location_icon: after
+wizards:
+  - entity: sensor.rod_location
+    name: Rod
+    color: gold
+    textcolor: black
+  - entity: sensor.pam_location
+    name: Pam
+    color: lightBlue
+    textcolor: black
+shaft_colour: gold
+width: 500
+header: ""
+cards: []
+title: Wizard Clock
+```
 
 ## Wishlist
 

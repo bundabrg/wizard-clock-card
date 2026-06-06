@@ -1,8 +1,8 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.06.04";
+const VERSION = "2026.06.06";
 
-const debugLogging = false;   // set to true to enable detailed logging for debugging purposes
-const debuggerStop = false ;  // set to true to stop at debugger statements
+var debugLogging = false;   // set to true to enable detailed logging for debugging purposes
+var debuggerStop = false ;  // set to true to stop at debugger statements
 class WizardClockCard extends HTMLElement {
 
 /* ============================================================================
@@ -254,6 +254,13 @@ class WizardClockCard extends HTMLElement {
       VERSION,
     );
     try {
+      if (config.debugger_stop !== undefined) {
+        debuggerStop = config.debugger_stop;
+      }
+      if (config.debug_logging !== undefined) {
+        debugLogging = config.debug_logging;
+      }
+
       this.config = config;
 
       if (!config.wizards) {
@@ -268,7 +275,7 @@ class WizardClockCard extends HTMLElement {
           ["before", "center", "after", "none"].includes(config.location_icon)
               ? config.location_icon
               : "center"; // position of the icon relative to the text
-      console.log(this.locationIcon);
+      if (debugLogging) console.log(`Icon location: ${this.locationIcon}`);
       this.travellingState = config.travelling ? config.travelling : "Away";
       this.min_location_slots = this.config.min_location_slots ? this.config.min_location_slots : 0;
       this.show_images=this.config.show_images ? (this.config.show_images=="Yes" ? true : false) : false;
@@ -296,7 +303,7 @@ class WizardClockCard extends HTMLElement {
       } else {
         this.selectedFont = "itcblkad_font";
       }
-      console.log(this.selectedFont);
+      if (debugLogging) console.log(`Selected font: ${this.selectedFont}`);
       this.fontScale = 1.1;
 
       this.exclude = [];
@@ -613,7 +620,7 @@ class WizardClockCard extends HTMLElement {
 
       img.onerror = () => {
       if (debuggerStop) debugger;
-        console.log(`wizardInfo[${num}].image failed to load: ${url}`);
+        console.warn(`wizardInfo[${num}].image failed to load: ${url}`);
       };
 
       img.src = url;
@@ -856,7 +863,7 @@ class WizardClockCard extends HTMLElement {
 
             img.onload = () => {
                 if (debuggerStop) debugger;
-                console.log("Background image loaded:", this.backGroundImage);
+                if (debugLogging) console.log("Background image loaded:", this.backGroundImage);
 
                 const imgW = img.width;
                 const imgH = img.height;
@@ -895,7 +902,7 @@ class WizardClockCard extends HTMLElement {
                 // redraw WITHOUT background
                 //this.lastframe = requestAnimationFrame(() => this.drawClock());
             };
-            console.log("Loading background image: ", this.backGroundImage)
+            if (debugLogging) console.log("Loading background image: ", this.backGroundImage)
             img.src = this.backGroundImage;
         }
 
@@ -1382,7 +1389,7 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
 
             img.onload = () => {
                 if (debuggerStop) debugger;
-                console.log("Spindle image loaded: ", this.spindleImage);
+                if (debugLogging) console.log("Spindle image loaded: ", this.spindleImage);
 
                 const imgW = img.width;
                 const imgH = img.height;
@@ -1422,7 +1429,7 @@ drawHand(ctx, pos, length, width, wizard, color, textcolor) {
                 //this.lastframe = requestAnimationFrame(() => this.drawClock());
             };
 
-            console.log("Loading spindle image: ", this.spindleImage)
+            if (debugLogging) console.log("Loading spindle image: ", this.spindleImage);
             img.src = this.spindleImage;
         }
 

@@ -19,7 +19,7 @@
  * -------------------------------------------------- */
 
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "1.2.1";
+const VERSION = "1.2.18";
 
 console.info(
   "%c %s %c %s",
@@ -54,6 +54,17 @@ class WizardClockCardEditor extends HTMLElement {
       location_icon: config.location_icon || "center",
       shaft_colour: config.shaft_colour || config.shaft_color || "",
       show_images: showImagesBool,
+      debugger_stop: config.debugger_stop === true,
+      debug_logging: config.debug_logging === true,
+      lost: config.lost || "",
+      travelling: config.travelling || "",
+      draw_image_at_hand_tip:
+        config.draw_image_at_hand_tip === true ||
+        config.draw_image_at_hand_tip === "Yes",
+      face_under_glass: config.face_under_glass || "",
+      back_ground_image: config.back_ground_image || "",
+      spindle_image: config.spindle_image || "",
+      exclude: Array.isArray(config.exclude) ? [...config.exclude] : [],
 
       locations: Array.isArray(config.locations)
         ? [...config.locations]
@@ -75,12 +86,17 @@ class WizardClockCardEditor extends HTMLElement {
           ? config.width
           : "",
 
-      wizards: (config.wizards || []).map(w => ({
-        entity: w.entity || "",
+      wizards: (config.wizards || []).map(w => {
+        if (typeof w === "string") {
+        return { entity: w, name: "", color: "gold", textcolor: "black" };
+        }
+        return {
+        entity: w.entity || w.entity_id || "",
         name: w.name || "",
         color: w.color || w.colour || "gold",
         textcolor: w.textcolor || w.textcolour || "black",
-      })),
+        };
+      }),
     };
 
     this._render();
@@ -94,6 +110,8 @@ class WizardClockCardEditor extends HTMLElement {
    * Render
    * -------------------------------------------------- */
   _render() {
+    console.debug("Rendering editor with _uiConfig:", this._uiConfig);
+
     if (!this._uiConfig) return;
 
     this.innerHTML = "";
@@ -171,6 +189,110 @@ class WizardClockCardEditor extends HTMLElement {
       })
     );
 
+    root.appendChild(
+      this._textField("Lost location label", this._uiConfig.lost, v => {
+        this._uiConfig = { ...this._uiConfig, lost: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._textField("Travelling location label", this._uiConfig.travelling, v => {
+        this._uiConfig = { ...this._uiConfig, travelling: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._textField("Face under glass image URL", this._uiConfig.face_under_glass, v => {
+        this._uiConfig = { ...this._uiConfig, face_under_glass: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._textField("Background image URL", this._uiConfig.back_ground_image, v => {
+        this._uiConfig = { ...this._uiConfig, back_ground_image: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._textField("Spindle image URL", this._uiConfig.spindle_image, v => {
+        this._uiConfig = { ...this._uiConfig, spindle_image: v };
+        this._save();
+      })
+    );
+
+    const excludeHeader = document.createElement("h3");
+    excludeHeader.textContent = "Excluded locations";
+    root.appendChild(excludeHeader);
+
+    this._uiConfig.exclude.forEach((ex, index) => {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.gap = "8px";
+      row.style.alignItems = "center";
+
+      const field = document.createElement("input");
+      field.type = "text";
+      field.value = ex ?? "";
+      field.placeholder = "Location to exclude";
+      field.style.flex = "1";
+      field.style.boxSizing = "border-box";
+      field.style.padding = "8px";
+      field.style.border = "1px solid var(--divider-color)";
+      field.style.borderRadius = "4px";
+      field.addEventListener("change", e => {
+        const exclude = [...this._uiConfig.exclude];
+        exclude[index] = e.target.value;
+        this._uiConfig = { ...this._uiConfig, exclude };
+        this._save();
+      });
+
+      const remove = document.createElement("mwc-button");
+      remove.outlined = true;
+      remove.textContent = "❌";
+      remove.addEventListener("click", () => {
+        const exclude = [...this._uiConfig.exclude];
+        exclude.splice(index, 1);
+        this._uiConfig = { ...this._uiConfig, exclude };
+        this._render();
+        this._save();
+      });
+
+      row.appendChild(field);
+      row.appendChild(remove);
+      root.appendChild(row);
+    });
+
+    const addExclude = document.createElement("mwc-button");
+    addExclude.outlined = true;
+    addExclude.textContent = "➕ Add Excluded Location";
+    addExclude.addEventListener("click", () => {
+      this._uiConfig = {
+        ...this._uiConfig,
+        exclude: [...this._uiConfig.exclude, ""],
+      };
+      this._render();
+    });
+
+    root.appendChild(addExclude);
+
+    root.appendChild(
+      this._toggleField("Stop at debugger statements", this._uiConfig.debugger_stop, v => {
+        this._uiConfig = { ...this._uiConfig, debugger_stop: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._toggleField("Enable debug logging", this._uiConfig.debug_logging, v => {
+        this._uiConfig = { ...this._uiConfig, debug_logging: v };
+        this._save();
+      })
+    );
+
     /* ---------- Locations list ---------- */
 
     const locHeader = document.createElement("h3");
@@ -190,9 +312,15 @@ class WizardClockCardEditor extends HTMLElement {
       row.style.gap = "8px";
       row.style.alignItems = "center";
 
-      const field = document.createElement("ha-textfield");
-      field.value = loc;
+      const field = document.createElement("input");
+      field.type = "text";
+      field.value = loc ?? "";
       field.placeholder = "Location name";
+      field.style.flex = "1";
+      field.style.boxSizing = "border-box";
+      field.style.padding = "8px";
+      field.style.border = "1px solid var(--divider-color)";
+      field.style.borderRadius = "4px";
       field.addEventListener("change", e => {
         const locations = [...this._uiConfig.locations];
         locations[index] = e.target.value;
@@ -250,17 +378,26 @@ class WizardClockCardEditor extends HTMLElement {
       row.style.gap = "8px";
       row.style.alignItems = "center";
 
-      const nameField = document.createElement("ha-textfield");
-      nameField.label = "Name";
-      nameField.value = entry.name;
+      const nameField = document.createElement("input");
+      nameField.type = "text";
+      nameField.value = entry.name ?? "";
+      nameField.placeholder = "Name";
+      nameField.style.boxSizing = "border-box";
+      nameField.style.padding = "8px";
+      nameField.style.border = "1px solid var(--divider-color)";
+      nameField.style.borderRadius = "4px";
       nameField.addEventListener("change", e => {
         this._updateLocationIcon(index, { name: e.target.value });
       });
 
-      const iconField = document.createElement("ha-textfield");
-      iconField.label = "Icon";
+      const iconField = document.createElement("input");
+      iconField.type = "text";
+      iconField.value = entry.icon ?? "";
       iconField.placeholder = "mdi:home-outline";
-      iconField.value = entry.icon;
+      iconField.style.boxSizing = "border-box";
+      iconField.style.padding = "8px";
+      iconField.style.border = "1px solid var(--divider-color)";
+      iconField.style.borderRadius = "4px";
       iconField.addEventListener("change", e => {
         this._updateLocationIcon(index, { icon: e.target.value });
       });
@@ -374,6 +511,17 @@ class WizardClockCardEditor extends HTMLElement {
       )
     );
 
+    root.appendChild(
+      this._toggleField(
+        "Draw wizard image at the hand tip",
+        this._uiConfig.draw_image_at_hand_tip,
+        v => {
+          this._uiConfig = { ...this._uiConfig, draw_image_at_hand_tip: v };
+          this._save();
+        }
+      )
+    );
+
   }
 
   /* --------------------------------------------------
@@ -381,32 +529,91 @@ class WizardClockCardEditor extends HTMLElement {
    * -------------------------------------------------- */
 
   _textField(label, value, onCommit) {
-    const f = document.createElement("ha-textfield");
-    f.label = label;
-    f.value = value ?? "";
-    f.addEventListener("change", e => onCommit(e.target.value));
-    return f;
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    labelEl.style.fontWeight = "500";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = value ?? "";
+    input.placeholder = label;
+    input.style.display = "block";
+    input.style.width = "100%";
+    input.style.minWidth = "200px";
+    input.style.minHeight = "36px";
+    input.style.boxSizing = "border-box";
+    input.style.padding = "8px";
+    input.style.border = "1px solid var(--divider-color)";
+    input.style.borderRadius = "4px";
+    input.addEventListener("change", e => onCommit(e.target.value));
+
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(input);
+    return wrapper;
   }
 
   _multilineField(label, value, onCommit) {
-    const f = document.createElement("ha-textfield");
-    f.label = label;
-    f.multiline = true;
-    f.rows = 4;
-    f.value = value ?? "";
-    f.addEventListener("change", e => onCommit(e.target.value));
-    return f;
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    labelEl.style.fontWeight = "500";
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value ?? "";
+    textarea.placeholder = label;
+    textarea.rows = 4;
+    textarea.style.display = "block";
+    textarea.style.width = "100%";
+    textarea.style.minWidth = "200px";
+    textarea.style.minHeight = "80px";
+    textarea.style.boxSizing = "border-box";
+    textarea.style.padding = "8px";
+    textarea.style.border = "1px solid var(--divider-color)";
+    textarea.style.borderRadius = "4px";
+    textarea.addEventListener("change", e => onCommit(e.target.value));
+
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(textarea);
+    return wrapper;
   }
 
   _numberField(label, value, onCommit) {
-    const f = document.createElement("ha-textfield");
-    f.label = label;
-    f.type = "number";
-    f.value = value !== "" ? String(value) : "";
-    f.addEventListener("change", e =>
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    labelEl.style.fontWeight = "500";
+
+    const input = document.createElement("input");
+    input.type = "number";
+    input.value = value !== "" ? String(value) : "";
+    input.placeholder = label;
+    input.style.display = "block";
+    input.style.width = "100%";
+    input.style.minWidth = "200px";
+    input.style.boxSizing = "border-box";
+    input.style.padding = "8px";
+    input.style.border = "1px solid var(--divider-color)";
+    input.style.borderRadius = "4px";
+    input.addEventListener("change", e =>
       onCommit(e.target.value === "" ? "" : Number(e.target.value))
     );
-    return f;
+
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(input);
+    return wrapper;
   }
 
   _toggleField(label, value, onCommit) {
@@ -424,6 +631,15 @@ class WizardClockCardEditor extends HTMLElement {
   }
 
   _selectField(label, value, options, onCommit) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    labelEl.style.fontWeight = "500";
+
     const select = document.createElement("ha-select");
     select.label = label;
     select.value = value;
@@ -436,19 +652,38 @@ class WizardClockCardEditor extends HTMLElement {
     select.addEventListener("selected", e =>
       onCommit(e.target.value)
     );
-    return select;
+
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(select);
+    return wrapper;
   }
 
   _colorFieldStandalone(label, value, onCommit) {
+    const wrapper = document.createElement("div");
+    wrapper.style.display = "flex";
+    wrapper.style.flexDirection = "column";
+    wrapper.style.gap = "4px";
+
+    const labelEl = document.createElement("label");
+    labelEl.textContent = label;
+    labelEl.style.fontWeight = "500";
+
     const wrap = document.createElement("div");
     wrap.style.display = "flex";
     wrap.style.gap = "8px";
     wrap.style.alignItems = "center";
 
-    const f = document.createElement("ha-textfield");
-    f.label = label;
+    const f = document.createElement("input");
+    f.type = "text";
     f.value = value ?? "";
     f.placeholder = "gold | #ffd700 | rgb(...)";
+    f.style.flex = "1";
+    f.style.display = "block";
+    f.style.width = "100%";
+    f.style.boxSizing = "border-box";
+    f.style.padding = "8px";
+    f.style.border = "1px solid var(--divider-color)";
+    f.style.borderRadius = "4px";
     f.addEventListener("change", e => {
       onCommit(e.target.value);
       swatch.style.background = e.target.value;
@@ -462,7 +697,9 @@ class WizardClockCardEditor extends HTMLElement {
 
     wrap.appendChild(f);
     wrap.appendChild(swatch);
-    return wrap;
+    wrapper.appendChild(labelEl);
+    wrapper.appendChild(wrap);
+    return wrapper;
   }
 
   _wizardColor(label, index, key) {
@@ -493,6 +730,15 @@ class WizardClockCardEditor extends HTMLElement {
       location_icon: this._uiConfig.location_icon,
       shaft_colour: this._uiConfig.shaft_colour || undefined,
       show_images: this._uiConfig.show_images ? "Yes" : "No",
+      lost: this._uiConfig.lost || undefined,
+      travelling: this._uiConfig.travelling || undefined,
+      draw_image_at_hand_tip: this._uiConfig.draw_image_at_hand_tip ? "Yes" : "No",
+      face_under_glass: this._uiConfig.face_under_glass || undefined,
+      back_ground_image: this._uiConfig.back_ground_image || undefined,
+      spindle_image: this._uiConfig.spindle_image || undefined,
+      exclude: this._uiConfig.exclude.length
+        ? this._uiConfig.exclude.filter(e => e)
+        : undefined,
 
       min_location_slots:
         this._uiConfig.min_location_slots !== ""
@@ -517,6 +763,8 @@ class WizardClockCardEditor extends HTMLElement {
           : undefined,
 
       wizards: this._uiConfig.wizards,
+      debugger_stop: this._uiConfig.debugger_stop,
+      debug_logging: this._uiConfig.debug_logging,
     };
 
     this.dispatchEvent(
