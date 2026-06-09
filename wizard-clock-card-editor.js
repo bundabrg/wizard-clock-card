@@ -19,7 +19,7 @@
  * -------------------------------------------------- */
 
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "1.2.18";
+const VERSION = "1.2.20";
 
 console.info(
   "%c %s %c %s",
@@ -61,7 +61,7 @@ class WizardClockCardEditor extends HTMLElement {
       draw_image_at_hand_tip:
         config.draw_image_at_hand_tip === true ||
         config.draw_image_at_hand_tip === "Yes",
-      face_under_glass: config.face_under_glass || "",
+      face_under_glass: config.face_under_glass || false,
       back_ground_image: config.back_ground_image || "",
       spindle_image: config.spindle_image || "",
       exclude: Array.isArray(config.exclude) ? [...config.exclude] : [],
@@ -131,6 +131,13 @@ class WizardClockCardEditor extends HTMLElement {
     );
 
     root.appendChild(
+      this._numberField("Width (of the drawing canvas)", this._uiConfig.width, v => {
+        this._uiConfig = { ...this._uiConfig, width: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
       this._textField("Font Name", this._uiConfig.fontName, v => {
         this._uiConfig = { ...this._uiConfig, fontName: v };
         this._save();
@@ -161,17 +168,6 @@ class WizardClockCardEditor extends HTMLElement {
     );
 
     root.appendChild(
-      this._colorFieldStandalone(
-        "Shaft Colour",
-        this._uiConfig.shaft_colour,
-        v => {
-          this._uiConfig = { ...this._uiConfig, shaft_colour: v };
-          this._save();
-        }
-      )
-    );
-
-    root.appendChild(
       this._numberField(
         "Minimum Location Slots (\"Numbers\" on the dial)",
         this._uiConfig.min_location_slots,
@@ -180,13 +176,6 @@ class WizardClockCardEditor extends HTMLElement {
           this._save();
         }
       )
-    );
-
-    root.appendChild(
-      this._numberField("Width (of the drawing canvas)", this._uiConfig.width, v => {
-        this._uiConfig = { ...this._uiConfig, width: v };
-        this._save();
-      })
     );
 
     root.appendChild(
@@ -204,13 +193,6 @@ class WizardClockCardEditor extends HTMLElement {
     );
 
     root.appendChild(
-      this._textField("Face under glass image URL", this._uiConfig.face_under_glass, v => {
-        this._uiConfig = { ...this._uiConfig, face_under_glass: v };
-        this._save();
-      })
-    );
-
-    root.appendChild(
       this._textField("Background image URL", this._uiConfig.back_ground_image, v => {
         this._uiConfig = { ...this._uiConfig, back_ground_image: v };
         this._save();
@@ -220,6 +202,24 @@ class WizardClockCardEditor extends HTMLElement {
     root.appendChild(
       this._textField("Spindle image URL", this._uiConfig.spindle_image, v => {
         this._uiConfig = { ...this._uiConfig, spindle_image: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._colorFieldStandalone(
+        "Shaft Color (fallback for spindle image)",
+        this._uiConfig.shaft_colour,
+        v => {
+          this._uiConfig = { ...this._uiConfig, shaft_colour: v };
+          this._save();
+        }
+      )
+    );
+
+    root.appendChild(
+      this._toggleField("Face-under-glass-dome effect", this._uiConfig.face_under_glass, v => {
+        this._uiConfig = { ...this._uiConfig, face_under_glass: v };
         this._save();
       })
     );
@@ -278,20 +278,6 @@ class WizardClockCardEditor extends HTMLElement {
     });
 
     root.appendChild(addExclude);
-
-    root.appendChild(
-      this._toggleField("Stop at debugger statements", this._uiConfig.debugger_stop, v => {
-        this._uiConfig = { ...this._uiConfig, debugger_stop: v };
-        this._save();
-      })
-    );
-
-    root.appendChild(
-      this._toggleField("Enable debug logging", this._uiConfig.debug_logging, v => {
-        this._uiConfig = { ...this._uiConfig, debug_logging: v };
-        this._save();
-      })
-    );
 
     /* ---------- Locations list ---------- */
 
@@ -520,6 +506,20 @@ class WizardClockCardEditor extends HTMLElement {
           this._save();
         }
       )
+    );
+
+    root.appendChild(
+      this._toggleField("Stop at debugger statements", this._uiConfig.debugger_stop, v => {
+        this._uiConfig = { ...this._uiConfig, debugger_stop: v };
+        this._save();
+      })
+    );
+
+    root.appendChild(
+      this._toggleField("Enable debug logging", this._uiConfig.debug_logging, v => {
+        this._uiConfig = { ...this._uiConfig, debug_logging: v };
+        this._save();
+      })
     );
 
   }

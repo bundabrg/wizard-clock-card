@@ -1,5 +1,5 @@
 const CARDNAME = "wizard-clock-card-update";
-const VERSION = "2026.06.06";
+const VERSION = "2026.06.06b";
 
 var debugLogging = false;   // set to true to enable detailed logging for debugging purposes
 var debuggerStop = false ;  // set to true to stop at debugger statements
@@ -1746,11 +1746,12 @@ function drawGlassOverlay(ctx, radius) {
 
   // --- 1. Glass reflection sheen ---
   ctx.save();
+  // bias the sheen toward the upper-left to match a light source there
   const grad = ctx.createLinearGradient(-radius, -radius, radius, radius);
-  grad.addColorStop(0.0, "rgba(255,255,255,0.15)");
-  grad.addColorStop(0.3, "rgba(255,255,255,0.05)");
-  grad.addColorStop(0.7, "rgba(255,255,255,0.00)");
-  grad.addColorStop(1.0, "rgba(255,255,255,0.10)");
+  grad.addColorStop(0.0, "rgba(255,255,255,0.28)");
+  grad.addColorStop(0.25, "rgba(255,255,255,0.08)");
+  grad.addColorStop(0.6, "rgba(255,255,255,0.00)");
+  grad.addColorStop(1.0, "rgba(255,255,255,0.00)");
 
   ctx.globalCompositeOperation = "lighter";
   ctx.fillStyle = grad;
@@ -1777,16 +1778,66 @@ function drawGlassOverlay(ctx, radius) {
   ctx.fill();
   ctx.restore();
 
-  // --- 3. Specular highlight (the glint) ---
-  ctx.save();
-  ctx.globalAlpha = 0.25;
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = radius * 0.03;
+  // --- 3. Soft dome reflection
+  // Place a small bright specular patch toward the upper-left to simulate
+  // a light source sitting above/left of the clock face.
 
+  ctx.save();
+
+  // Clock center gradient (true dome)
+  const dome = ctx.createRadialGradient(
+    0, 0, radius * 0.00,
+    0, 0, radius * 1.00
+  );
+
+  const offset = 0.95;
+  const thickness = 0.01;
+
+  dome.addColorStop(0.00, "rgba(255,255,255,0.5)");
+  dome.addColorStop(offset - (offset * thickness), "rgba(255,255,255,0.5)");
+  dome.addColorStop(offset, "rgba(255,255,255,1.00)");
+  dome.addColorStop(offset + (offset * thickness), "rgba(255,255,255,0.5)");
+  dome.addColorStop(1.00, "rgba(255,255,255,0.5)");
+
+  ctx.fillStyle = dome;
+  //ctx.fillStyle = "rgba(255,0,0,0.30)";
+  ctx.globalCompositeOperation = "lighter";
+
+  // Compute 11 o'clock direction
+  const theta = -120 * Math.PI / 180;
+  const nx = Math.cos(theta);
+  const ny = Math.sin(theta);
+
+  // Tangent direction (parallel to circumference)
+  const tx = -ny;
+  const ty = nx;
+  const rot = Math.atan2(ty, tx);
+
+  // Position of the streak
+  const gx = nx * offset * radius;
+  const gy = ny * offset * radius;
+
+  // Draw the streak
   ctx.beginPath();
-  ctx.arc(0, 0, radius * 0.92, -0.6, -0.2);
-  ctx.stroke();
+  ctx.ellipse(gx, gy, radius * 0.1, radius * thickness, rot, 0, Math.PI * 2);
+  ctx.fill();
+
   ctx.restore();
+
+  // --- Sharp cusp highlight ---
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  ctx.fillStyle = "rgba(255,255,255,0.30)";
+  ctx.beginPath();
+  ctx.ellipse(gx - nx * radius * 0.03,
+              gy - ny * radius * 0.03,
+              radius * 0.07, radius * 0.005,
+              rot, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+
 }
 
 // ----------------------------------------------------------------------------
