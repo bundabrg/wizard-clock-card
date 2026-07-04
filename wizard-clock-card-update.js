@@ -157,7 +157,10 @@ class WizardClockCard extends HTMLElement {
       locationInfoEntry = this.getLocationInfo(this.lostState);
       locationInfoEntry.keep = true;
     }
-
+    if (this.config.away){
+      locationInfoEntry = this.getLocationInfo(this.awayState);
+      locationInfoEntry.keep = true;
+    }
     /* Add the state of each wizard, which may be in a zone or something else. */
     for (let num = this.wizardInfo.length - 1; num >= 0; num--) {
       var stateStr = this.getWizardState(this.wizardInfo[num].entity);
