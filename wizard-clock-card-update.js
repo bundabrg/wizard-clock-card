@@ -271,6 +271,7 @@ class WizardClockCard extends HTMLElement {
 
       this.currentstate = [];
       this.lostState = config.lost ? config.lost : "Lost";
+      this.awayState = config.away ? config.away : "Away";
       this.locationIcon =
           ["before", "center", "after", "none"].includes(config.location_icon)
               ? config.location_icon
@@ -701,12 +702,12 @@ class WizardClockCard extends HTMLElement {
     let stateStr = state.state;
     if (debugLogging) console.log(`Initial stateStr for entity ${entity}: ${stateStr}`);
 
-    /* If the state is "unknown" or "unavailable", return the lost state (if configured) or Away. */
+    /* If the state is "unknown" or "unavailable", return the lost state. */
     if (["unknown", "unavailable"].includes(stateStr)) {
       return this.lostState;
     }
     
-    /* If the state is excluded in the config, return the lost state (if configured) or Away.*/
+    /* If the state is excluded in the config, return the lost state (if configured).*/
     if (this.exclude.includes(stateStr)) {
       return this.lostState;
     }
@@ -771,8 +772,8 @@ class WizardClockCard extends HTMLElement {
         /* show travelling (if configured and velocity > 15) */
         stateStr = this.travellingState;
       } else {
-        /* show lost (if configured) or Away */
-        stateStr = this.lostState;
+        /* show away State (if configured) */
+        stateStr = this.awayState;
       }
     }
 
