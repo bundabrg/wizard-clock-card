@@ -1,8 +1,8 @@
 {
     "wizardclock": {
-      "version": "0.8.0",
-      "remote_location": "https://raw.githubusercontent.com/malcolmrigg/wizard-clock-card/master/wizard-clock-card.js",
-      "visit_repo": "https://github.com/malcolmrigg/wizard-clock-card",
-      "changelog": "https://github.com/malcolmrigg/wizard-clock-card/releases/latest"
+      "version": "0.8.0-b1",
+      "remote_location": "https://raw.githubusercontent.com/bundabrg/wizard-clock-card/rodpayne/wizard-clock-card-update.js",
+      "visit_repo": "https://github.com/bundabrg/wizard-clock-card",
+      "changelog": "https://github.com/bundabrg/wizard-clock-card/releases/latest"
     }
 }
